@@ -48,6 +48,8 @@ typedef struct {
 typedef struct {
 
   Point * start, * end;
+  int size;
+  int numHits;
   int isSunken;
 
 } Ship;
@@ -79,7 +81,7 @@ Game * game_init(Player *);
 // Creation utilities
 Player * player_create(char[20]);
 Board  * board_create();
-Ship   * ship_create(Point *, Point *);
+Ship   * ship_create(Point *, Point *, int);
 Attack * attack_create(Point *, attack_result);
 Point  * point_create(int x, int y);
 
@@ -106,8 +108,6 @@ int main() {
 
   Game * game = game_init(player_create("Steven"));
   board_placeShips(game->comp->board);
-
-  player_attackPlayer(game->real, game->comp, game->comp->board->ships[0]->start);
 
   return 0;
 }
@@ -150,11 +150,12 @@ Board * board_create() {
   return board;
 }
 
-Ship * ship_create(Point * start, Point * end) {
+Ship * ship_create(Point * start, Point * end, int size) {
   Ship * ship = malloc(sizeof(Ship));
   ship->start = start;
   ship->end   = end;
   ship->isSunken = 0;
+  ship->numHits = 0;
 
   return ship;
 }
@@ -177,6 +178,11 @@ Point * point_create(int x, int y) {
 attack_result player_attackPlayer(Player * offense, Player * defense, Point * point) {
   Ship * ship = board_shipAt(defense->board, point);
   attack_result result = (attack_result)(ship != NULL);
+
+  if(result == HIT && !ship->isSunken) {
+    ship->numHits++;
+    ship->isSunken = (ship->numHits == ship->size);
+  }
 
   Attack * attack = attack_create(point, result);
 
@@ -205,7 +211,7 @@ void board_placeShips(Board * board) {
     else           end = point_create(start->x, start->y+shipSize);
 
     if(board_canPlaceShip(board, start, end)) {
-      board->ships[i] = ship_create(start, end);
+      board->ships[i] = ship_create(start, end, shipSize);
       i++;
     }
     else {
