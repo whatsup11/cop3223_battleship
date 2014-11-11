@@ -157,6 +157,7 @@ Ship * ship_create(Point * start, Point * end, int size) {
   Ship * ship = malloc(sizeof(Ship));
   ship->start = start;
   ship->end   = end;
+  ship->size  = size;
   ship->isSunken = 0;
   ship->numHits = 0;
 
