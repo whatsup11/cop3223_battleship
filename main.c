@@ -239,27 +239,6 @@ Ship * board_shipAt(Board * board, Point * point) {
   return NULL;
 }
 
-void displayBoard() {
-  char display[14][19] = {
-    "                  ",
-    "    |-------------",
-    "    | 0123456789 |",
-    "|---|-------------",
-    "| A |             ",
-    "| B |             ",
-    "| C |             ",
-    "| D |             ",
-    "| E |             ",
-    "| F |             ",
-    "| G |             ",
-    "| H |             ",
-    "| I |             ",
-    "| J |             " };
-
-  int i;
-  for(i = 0; i < 14; i++) printf("%s\n", display[i]);
-}
-
 int utils_lineIntersectsLine(Point * s1, Point * e1, Point * s2, Point * e2) {
   // When line 1 is horzontal
   if(s1->x == e1->x) {
