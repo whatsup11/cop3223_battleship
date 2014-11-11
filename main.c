@@ -12,6 +12,7 @@
 #include <time.h>
 
 #define BOARD_SIZE 10
+#define MAX_ATTACKS BOARD_SIZE*BOARD_SIZE
 #define NUM_SHIP_TYPES 5
 
 typedef enum {
@@ -26,8 +27,8 @@ typedef enum {
 
 typedef enum {
 
-  HIT = 0,
-  MISS = 1
+  MISS = 0,
+  HIT
 
 } attack_result;
 
@@ -61,7 +62,7 @@ typedef struct {
 
   char name[30];
   Board * board;
-  Attack * attacks[100];
+  Attack * attacks[MAX_ATTACKS];
 
 } Player;
 
@@ -82,11 +83,11 @@ Ship   * ship_create(Point *, Point *);
 Attack * attack_create(Point *, attack_result);
 Point  * point_create(int x, int y);
 
-Attack * player_attackPlayer(Player *, Player *, Point *);
+attack_result player_attackPlayer(Player *, Player *, Point *);
 
 void board_placeShips(Board *);
 int board_canPlaceShip(Board *, Point *, Point *);
-Ship * board_hipAt(Board *, Point *);
+Ship * board_shipAt(Board *, Point *);
 
 void displayBoard();
 
@@ -96,7 +97,7 @@ int utils_isWithin(int, int, int);
 
 //==============================================================================
 //------------------------------------------------------------------------------
-// Implementation
+// Main
 //------------------------------------------------------------------------------
 //==============================================================================
 
@@ -105,6 +106,8 @@ int main() {
 
   Game * game = game_init(player_create("Steven"));
   board_placeShips(game->comp->board);
+
+  player_attackPlayer(game->real, game->comp, game->comp->board->ships[0]->start);
 
   return 0;
 }
@@ -130,6 +133,10 @@ Player * player_create(char name[20]) {
   strcpy(player->name, name);
   player->board = board_create();
 
+  int i;
+  for(i = 0; i < MAX_ATTACKS; i++)
+    player->attacks[i] = NULL;
+
   return player;
 }
 
@@ -152,11 +159,36 @@ Ship * ship_create(Point * start, Point * end) {
   return ship;
 }
 
+Attack * attack_create(Point * point, attack_result result) {
+  Attack * attack = malloc(sizeof(Attack));
+  attack->location = point;
+  attack->result = result;
+
+  return attack;
+}
+
 Point * point_create(int x, int y) {
   Point * point = malloc(sizeof(Point));
   point->x = x;
   point->y = y;
   return point;
+}
+
+attack_result player_attackPlayer(Player * offense, Player * defense, Point * point) {
+  Ship * ship = board_shipAt(defense->board, point);
+  attack_result result = (attack_result)(ship != NULL);
+
+  Attack * attack = attack_create(point, result);
+
+  int i;
+  for(i = 0; i < MAX_ATTACKS; i++) {
+    if(offense->attacks[i] == NULL) {
+      offense->attacks[i] = attack;
+      break;
+    }
+  }
+
+  return result;
 }
 
 void board_placeShips(Board * board) {
