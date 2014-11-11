@@ -2,15 +2,9 @@
 //  main.c
 //  battleship
 //
-//  Created by Steven Petryk on 11/9/14.
-//  Copyright (c) 2014 Steven Petryk. All rights reserved.
+//  Created by Catherine Ninah and Steven Petryk
+//  Copyright (c) 2014 Catherine Ninah and Steven Petryk. All rights reserved.
 //
-
-/*
-  - Sinkin' About You
-  - Under the C
-  - The Iceberg
- */
 
 #include <stdio.h>
 #include <string.h>
