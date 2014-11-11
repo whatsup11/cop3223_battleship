@@ -429,6 +429,7 @@ void ai_attackTarget(Game * game) {
     // If doing this runs us off the map, or the point has already been
     // attacked, go back to the first hit of the streak and go the opposite way.
     if(point == NULL || player_getAttackAt(comp, point) != NULL) {
+      free(point);
       point = getAdjacentPoint(firstStreak->loc, invertDirection(direction));
     }
   }
