@@ -86,10 +86,11 @@ Attack * attack_create(Point *, attack_result);
 Point  * point_create(int x, int y);
 
 attack_result player_attackPlayer(Player *, Player *, Point *);
+Attack * player_getAttackAt(Player *, Point *);
 
 void board_placeShips(Board *);
 int board_canPlaceShip(Board *, Point *, Point *);
-Ship * board_shipAt(Board *, Point *);
+Ship * board_getShipAt(Board *, Point *);
 
 void displayBoard();
 
@@ -176,16 +177,21 @@ Point * point_create(int x, int y) {
 }
 
 attack_result player_attackPlayer(Player * offense, Player * defense, Point * point) {
-  Ship * ship = board_shipAt(defense->board, point);
-  attack_result result = (attack_result)(ship != NULL);
+  Attack * attack;
 
-  if(result == HIT && !ship->isSunken) {
-    ship->numHits++;
-    ship->isSunken = (ship->numHits == ship->size);
+  // First, ensure an attack here hasn't already been attempted
+  if((attack = player_getAttackAt(offense, point))) {
+    return attack->result;
   }
 
-  Attack * attack = attack_create(point, result);
+  // Look for a ship at the point of attack
+  Ship * ship = board_getShipAt(defense->board, point);
+  // If it's a hit, the ship won't be NULL
+  attack_result result = ship != NULL ? HIT : MISS;
 
+  attack = attack_create(point, result);
+
+  // Add the attack to the array of attacks
   int i;
   for(i = 0; i < MAX_ATTACKS; i++) {
     if(offense->attacks[i] == NULL) {
@@ -194,7 +200,27 @@ attack_result player_attackPlayer(Player * offense, Player * defense, Point * po
     }
   }
 
+  // If we had a hit, make the ship closer to sinking
+  if(result == HIT) {
+    ship->numHits++;
+    ship->isSunken = (ship->numHits == ship->size);
+  }
+
   return result;
+}
+
+Attack * player_getAttackAt(Player * player, Point * point) {
+  int i;
+  for(i = 0; i < MAX_ATTACKS; i++) {
+    Attack * attack = player->attacks[i];
+
+    if(attack == NULL) break;
+    if(attack->location->x == point->x && attack->location->y == point->y) {
+      return attack;
+    }
+  }
+
+  return NULL;
 }
 
 void board_placeShips(Board * board) {
@@ -234,7 +260,7 @@ int board_canPlaceShip(Board * board, Point * start, Point * end) {
   return 1;
 }
 
-Ship * board_shipAt(Board * board, Point * point) {
+Ship * board_getShipAt(Board * board, Point * point) {
   int i;
   for(i = 0; i < NUM_SHIP_TYPES; i++) {
     Point * start = board->ships[i]->start;
