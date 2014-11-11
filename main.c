@@ -18,6 +18,16 @@
 
 typedef enum {
 
+  NORTH = 0,
+  EAST,
+  SOUTH,
+  WEST,
+  INVALID_DIRECTION
+
+} direction_t;
+
+typedef enum {
+
   PATROL_BOAT = 2,
   DESTROYER,
   SUBMARINE,
@@ -48,7 +58,7 @@ typedef struct {
 
 typedef struct {
 
-  Point * location;
+  Point * loc;
   attack_result result;
 
 } Attack;
@@ -73,6 +83,7 @@ typedef struct {
   char name[MAX_NAME_SIZE];
   Board * board;
   Attack * attacks[MAX_ATTACKS];
+  int numAttacks;
 
 } Player;
 
@@ -111,28 +122,37 @@ Ship * board_getShipAt(Board *, Point *);
 
 void displayBoard();
 
-Point * ai_attackNextPoint(Game *);
-Point * ai_attackNextPointHunt(Game *);
-Point * ai_chooseNextPointTarget(Game *);
+int ai_attack(Game *);
+void ai_attackHunt(Game *);
+void ai_attackTarget(Game *);
+Attack * ai_firstHitInStreak(Player *);
 
-char * utils_randomPunnyName();
-int utils_lineIntersectsLine(Point *, Point *, Point *, Point *);
-int utils_pointIntersectsLine(Point *, Point *, Point *);
-int utils_isWithin(int, int, int);
+char * randomPunnyName();
+Point * getAdjacentPoint(Point *, direction_t);
+direction_t directionBetweenPoints(Point *, Point *);
+direction_t invertDirection(direction_t);
+int lineIntersectsLine(Point *, Point *, Point *, Point *);
+int pointIntersectsLine(Point *, Point *, Point *);
+int pointsEqual(Point *, Point *);
+int clamp(int, int, int);
+int isWithin(int, int, int);
 
 
 
-//==============================================================================
+/**=============================================================================
 //------------------------------------------------------------------------------
 // Main
 //------------------------------------------------------------------------------
-//==============================================================================
+//============================================================================*/
 
 int main() {
   srand((int)time(NULL));
 
   Game * game = game_init(player_create("Steven"));
+  board_placeShips(game->real->board);
   board_placeShips(game->comp->board);
+
+  while(ai_attack(game));
 
   return 0;
 }
@@ -141,8 +161,7 @@ Game * game_init(Player * real) {
   Game * game = malloc(sizeof(Game));
 
   game->real = real;
-  game->comp = player_create(utils_randomPunnyName());
-
+  game->comp = player_create(randomPunnyName());
   game->aiState = ai_init();
 
   return game;
@@ -150,11 +169,11 @@ Game * game_init(Player * real) {
 
 
 
-//==============================================================================
+/**=============================================================================
 //------------------------------------------------------------------------------
 // Struct Factories
 //------------------------------------------------------------------------------
-//==============================================================================
+//============================================================================*/
 
 AIState * ai_init() {
   AIState * aiState = malloc(sizeof(AIState));
@@ -169,6 +188,7 @@ Player * player_create(char name[MAX_NAME_SIZE]) {
 
   strcpy(player->name, name);
   player->board = board_create();
+  player->numAttacks = 0;
 
   int i;
   for(i = 0; i < MAX_ATTACKS; i++)
@@ -200,7 +220,7 @@ Ship * ship_create(Point * start, Point * end, int size) {
 
 Attack * attack_create(Point * point, attack_result result) {
   Attack * attack = malloc(sizeof(Attack));
-  attack->location = point;
+  attack->loc = point;
   attack->result = result;
 
   return attack;
@@ -222,11 +242,11 @@ Point * point_create_random(int limitX, int limitY) {
 
 
 
-//==============================================================================
+/**=============================================================================
 //------------------------------------------------------------------------------
 // Player actions
 //------------------------------------------------------------------------------
-//==============================================================================
+//============================================================================*/
 
 attack_result player_attackPlayer(Player * offense, Player * defense, Point * point) {
   Attack * attack;
@@ -242,6 +262,7 @@ attack_result player_attackPlayer(Player * offense, Player * defense, Point * po
   attack_result result = ship != NULL ? HIT : MISS;
 
   attack = attack_create(point, result);
+  offense->numAttacks++;
 
   // Add the attack to the array of attacks
   int i;
@@ -262,14 +283,16 @@ attack_result player_attackPlayer(Player * offense, Player * defense, Point * po
 }
 
 Attack * player_getAttackAt(Player * player, Point * point) {
+  // Disregard NULL points and points that are outside the game board
   if(point == NULL) return NULL;
+  if(!isWithin(point->x, 0, BOARD_SIZE) || !isWithin(point->y, 0, BOARD_SIZE))
+    return NULL;
 
   int i;
-  for(i = 0; i < MAX_ATTACKS; i++) {
+  for(i = 0; i < player->numAttacks; i++) {
     Attack * attack = player->attacks[i];
 
-    if(attack == NULL) break;
-    if(attack->location->x == point->x && attack->location->y == point->y) {
+    if(attack->loc->x == point->x && attack->loc->y == point->y) {
       return attack;
     }
   }
@@ -279,11 +302,11 @@ Attack * player_getAttackAt(Player * player, Point * point) {
 
 
 
-//==============================================================================
+/**=============================================================================
 //------------------------------------------------------------------------------
 // Boards
 //------------------------------------------------------------------------------
-//==============================================================================
+//============================================================================*/
 
 void board_placeShips(Board * board) {
   int shipSize = 6, i = 0;
@@ -314,7 +337,7 @@ int board_canPlaceShip(Board * board, Point * start, Point * end) {
   for(i = 0; i < NUM_SHIP_TYPES; i++) {
     if(board->ships[i] != NULL) {
       Ship * ship = board->ships[i];
-      if(utils_lineIntersectsLine(ship->start, ship->end, start, end))
+      if(lineIntersectsLine(ship->start, ship->end, start, end))
         return 0;
     }
   }
@@ -327,7 +350,7 @@ Ship * board_getShipAt(Board * board, Point * point) {
   for(i = 0; i < NUM_SHIP_TYPES; i++) {
     Point * start = board->ships[i]->start;
     Point * end   = board->ships[i]->end;
-    if(utils_pointIntersectsLine(point, start, end)) return board->ships[i];
+    if(pointIntersectsLine(point, start, end)) return board->ships[i];
   }
 
   return NULL;
@@ -335,46 +358,111 @@ Ship * board_getShipAt(Board * board, Point * point) {
 
 
 
-//==============================================================================
+/**=============================================================================
 //------------------------------------------------------------------------------
 // AI
 //------------------------------------------------------------------------------
-//==============================================================================
+//============================================================================*/
 
-Point * ai_attackNextPoint(Game * game) {
+int ai_attack(Game * game) {
+  // Can't make any more moves
+  if(game->comp->numAttacks == 100) return 0;
+
   if(game->aiState->approach == HUNT)
-    return ai_attackNextPointHunt(game);
-  else
-    return NULL; // TODO
+    ai_attackHunt(game);
+  else {
+//    ai_attackTarget(game);
+    return 0;
+  }
+
+  return 1;
 }
 
-Point * ai_attackNextPointHunt(Game * game) {
+void ai_attackHunt(Game * game) {
   Point * point;
 
   // Keep on generating random points until we find one we haven't tried to
   // attack before
-  do {
+  while(1) {
     point = point_create_random(-1, -1);
-  } while(player_getAttackAt(game->comp, point) != NULL);
+    if(player_getAttackAt(game->comp, point) == NULL) break;
+    else free(point);
+  }
 
   // If we have a hit, switch to target mode
   attack_result result = player_attackPlayer(game->comp, game->real, point);
   if(result == HIT) {
     game->aiState->approach = TARGET;
   }
+}
 
-  return point;
+void ai_attackTarget(Game * game) {
+  Player * comp = game->comp;
+
+  Attack * latestAttack = comp->attacks[comp->numAttacks-1];
+  Attack * firstStreak = ai_firstHitInStreak(comp);
+
+  Point * point = NULL;
+  int i;
+
+  // If we've only hit the ship in one spot
+  if(pointsEqual(latestAttack->loc, firstStreak->loc)) {
+    // Check all four sides of the point for valid attacks
+    for(i = 0; i < 4; i++) {
+      point = getAdjacentPoint(latestAttack->loc, (direction_t)i);
+      if(player_getAttackAt(comp, point) == NULL) break;
+      else free(point);
+    }
+  }
+  // If we've hit the ship in more than one spot, but the last attack was a
+  // miss, we must try again on the other end of the ship
+  else if(latestAttack->result == MISS) {
+    direction_t direction = directionBetweenPoints(firstStreak->loc, latestAttack->loc);
+    point = getAdjacentPoint(firstStreak->loc, invertDirection(direction));
+  }
+  // If we've hit the ship in more than one spot, and the last attack was a hit,
+  // just continue in the same direction.
+  else {
+    direction_t direction = directionBetweenPoints(firstStreak->loc, latestAttack->loc);
+    point = getAdjacentPoint(latestAttack->loc, direction);
+
+    // If doing this runs us off the map, or the point has already been
+    // attacked, go back to the first hit of the streak and go the opposite way.
+    if(point == NULL || player_getAttackAt(comp, point) != NULL) {
+      point = getAdjacentPoint(firstStreak->loc, invertDirection(direction));
+    }
+  }
+
+  // If none of that works, go back to hunting.
+  if(point == NULL) {
+    game->aiState->approach = HUNT;
+    ai_attackHunt(game);
+    return;
+  }
+
+  player_attackPlayer(comp, game->real, point);
+}
+
+Attack * ai_firstHitInStreak(Player * player) {
+  int i;
+  Attack ** attacks = player->attacks;
+
+  for(i = player->numAttacks-1; i > 0; i--) {
+    if(attacks[i]->result == HIT &&
+      (attacks[i-1]->result == MISS || i == player->numAttacks-1))
+      return attacks[i];
+  }
+  return NULL; // didn't find anything
 }
 
 
-
-//==============================================================================
+/**=============================================================================
 //------------------------------------------------------------------------------
 // Utils
 //------------------------------------------------------------------------------
-//==============================================================================
+//============================================================================*/
 
-char * utils_randomPunnyName() {
+char * randomPunnyName() {
   char punnyNames[][MAX_NAME_SIZE] = {
     "Sinkin' About You",
     "The Iceburg",
@@ -390,13 +478,41 @@ char * utils_randomPunnyName() {
   return randomName;
 }
 
-int utils_lineIntersectsLine(Point * s1, Point * e1, Point * s2, Point * e2) {
+Point * getAdjacentPoint(Point * point, direction_t direction) {
+  int x = point->x, y = point->y;
+
+  switch(direction) {
+    case NORTH: y--; break;
+    case EAST:  x++; break;
+    case SOUTH: y++; break;
+    case WEST:  x--; break;
+    default: break;
+  }
+
+  if(!isWithin(x, 0, BOARD_SIZE) || !isWithin(y, 0, BOARD_SIZE)) return NULL;
+  return point_create(x, y);
+}
+
+direction_t directionBetweenPoints(Point * p1, Point * p2) {
+  if(p2->y > p1->y) return NORTH;
+  if(p2->x > p1->x) return EAST;
+  if(p2->y < p1->y) return SOUTH;
+  if(p2->x < p1->x) return WEST;
+  return INVALID_DIRECTION;
+}
+
+direction_t invertDirection(direction_t direction) {
+  if(direction == INVALID_DIRECTION) return INVALID_DIRECTION;
+  return (direction_t)((direction + 2) % 4);
+}
+
+int lineIntersectsLine(Point * s1, Point * e1, Point * s2, Point * e2) {
   // When line 1 is horzontal
   if(s1->x == e1->x) {
     int y;
     for(y = s1->y; y <= e1->y; y++) {
       Point * currentPoint = point_create(s1->x, y);
-      int doesIntersect = utils_pointIntersectsLine(currentPoint, s2, e2);
+      int doesIntersect = pointIntersectsLine(currentPoint, s2, e2);
       free(currentPoint);
       if(doesIntersect) return 1;
     }
@@ -406,7 +522,7 @@ int utils_lineIntersectsLine(Point * s1, Point * e1, Point * s2, Point * e2) {
     int x;
     for(x = s1->x; x <= e1->x; x++) {
       Point * currentPoint = point_create(x, s1->y);
-      int doesIntersect = utils_pointIntersectsLine(currentPoint, s2, e2);
+      int doesIntersect = pointIntersectsLine(currentPoint, s2, e2);
       free(currentPoint);
       if(doesIntersect) return 1;
     }
@@ -415,16 +531,27 @@ int utils_lineIntersectsLine(Point * s1, Point * e1, Point * s2, Point * e2) {
   return 0;
 }
 
-int utils_pointIntersectsLine(Point * point, Point * a, Point * b) {
+int pointIntersectsLine(Point * point, Point * a, Point * b) {
   int sameX = a->x == point->x && b->x == point->x;
   int sameY = a->y == point->y && b->y == point->y;
-  int vertical   = sameX && utils_isWithin(point->y, a->y, b->y);
-  int horizontal = sameY && utils_isWithin(point->x, a->x, b->x);
+  int vertical   = sameX && isWithin(point->y, a->y, b->y);
+  int horizontal = sameY && isWithin(point->x, a->x, b->x);
 
   return vertical || horizontal;
 }
 
-int utils_isWithin(int n, int a, int b) {
+int pointsEqual(Point * a, Point * b) {
+  return a->x == b->x && a->y == b->y;
+}
+
+int clamp(int n, int a, int b) {
+  if(a < b) { int tmp = a; a = b; b = tmp; }
+  if(a > n) return a;
+  if(b < n) return b;
+  return n;
+}
+
+int isWithin(int n, int a, int b) {
   if(a > b) {
     int tmp = a; b = a; a = tmp;
   }
