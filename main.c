@@ -33,6 +33,13 @@ typedef enum {
 
 } attack_result;
 
+typedef enum {
+
+  HUNT,
+  TARGET
+
+} approach_t;
+
 typedef struct {
 
   int x, y;
@@ -71,8 +78,15 @@ typedef struct {
 
 typedef struct {
 
+  approach_t approach;
+
+} AIState;
+
+typedef struct {
+
   Player * comp;
   Player * real;
+  AIState * aiState;
 
 } Game;
 
@@ -80,11 +94,13 @@ typedef struct {
 Game * game_init(Player *);
 
 // Creation utilities
-Player * player_create(char[MAX_NAME_SIZE]);
-Board  * board_create();
-Ship   * ship_create(Point *, Point *, int);
-Attack * attack_create(Point *, attack_result);
-Point  * point_create(int x, int y);
+AIState * ai_init();
+Player  * player_create(char[MAX_NAME_SIZE]);
+Board   * board_create();
+Ship    * ship_create(Point *, Point *, int);
+Attack  * attack_create(Point *, attack_result);
+Point   * point_create(int, int);
+Point   * point_create_random(int, int);
 
 attack_result player_attackPlayer(Player *, Player *, Point *);
 Attack * player_getAttackAt(Player *, Point *);
@@ -95,10 +111,16 @@ Ship * board_getShipAt(Board *, Point *);
 
 void displayBoard();
 
+Point * ai_attackNextPoint(Game *);
+Point * ai_attackNextPointHunt(Game *);
+Point * ai_chooseNextPointTarget(Game *);
+
 char * utils_randomPunnyName();
 int utils_lineIntersectsLine(Point *, Point *, Point *, Point *);
 int utils_pointIntersectsLine(Point *, Point *, Point *);
 int utils_isWithin(int, int, int);
+
+
 
 //==============================================================================
 //------------------------------------------------------------------------------
@@ -115,19 +137,31 @@ int main() {
   return 0;
 }
 
-//==============================================================================
-//------------------------------------------------------------------------------
-// Implementation
-//------------------------------------------------------------------------------
-//==============================================================================
-
 Game * game_init(Player * real) {
   Game * game = malloc(sizeof(Game));
 
   game->real = real;
   game->comp = player_create(utils_randomPunnyName());
 
+  game->aiState = ai_init();
+
   return game;
+}
+
+
+
+//==============================================================================
+//------------------------------------------------------------------------------
+// Struct Factories
+//------------------------------------------------------------------------------
+//==============================================================================
+
+AIState * ai_init() {
+  AIState * aiState = malloc(sizeof(AIState));
+
+  aiState->approach = HUNT;
+
+  return aiState;
 }
 
 Player * player_create(char name[MAX_NAME_SIZE]) {
@@ -179,6 +213,21 @@ Point * point_create(int x, int y) {
   return point;
 }
 
+Point * point_create_random(int limitX, int limitY) {
+  if(limitX < 0) limitX = BOARD_SIZE;
+  if(limitY < 0) limitY = BOARD_SIZE;
+
+  return point_create(rand() % limitX, rand() % limitY);
+}
+
+
+
+//==============================================================================
+//------------------------------------------------------------------------------
+// Player actions
+//------------------------------------------------------------------------------
+//==============================================================================
+
 attack_result player_attackPlayer(Player * offense, Player * defense, Point * point) {
   Attack * attack;
 
@@ -213,6 +262,8 @@ attack_result player_attackPlayer(Player * offense, Player * defense, Point * po
 }
 
 Attack * player_getAttackAt(Player * player, Point * point) {
+  if(point == NULL) return NULL;
+
   int i;
   for(i = 0; i < MAX_ATTACKS; i++) {
     Attack * attack = player->attacks[i];
@@ -226,12 +277,20 @@ Attack * player_getAttackAt(Player * player, Point * point) {
   return NULL;
 }
 
+
+
+//==============================================================================
+//------------------------------------------------------------------------------
+// Boards
+//------------------------------------------------------------------------------
+//==============================================================================
+
 void board_placeShips(Board * board) {
   int shipSize = 6, i = 0;
 
   while(shipSize-- >= 2) {
-    Point * start = point_create(
-      rand() % (BOARD_SIZE-shipSize), rand() % (BOARD_SIZE-shipSize));
+    int limit = BOARD_SIZE-shipSize;
+    Point * start = point_create_random(limit, limit);
     Point * end;
 
     // Horizontal
@@ -272,6 +331,40 @@ Ship * board_getShipAt(Board * board, Point * point) {
   }
 
   return NULL;
+}
+
+
+
+
+//==============================================================================
+//------------------------------------------------------------------------------
+// AI
+//------------------------------------------------------------------------------
+//==============================================================================
+
+Point * ai_attackNextPoint(Game * game) {
+  if(game->aiState->approach == HUNT)
+    return ai_attackNextPointHunt(game);
+  else
+    return NULL; // TODO
+}
+
+Point * ai_attackNextPointHunt(Game * game) {
+  Point * point;
+
+  // Keep on generating random points until we find one we haven't tried to
+  // attack before
+  do {
+    point = point_create_random(-1, -1);
+  } while(player_getAttackAt(game->comp, point) != NULL);
+
+  // If we have a hit, switch to target mode
+  attack_result result = player_attackPlayer(game->comp, game->real, point);
+  if(result == HIT) {
+    game->aiState->approach = TARGET;
+  }
+
+  return point;
 }
 
 char * utils_randomPunnyName() {
