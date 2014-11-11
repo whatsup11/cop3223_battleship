@@ -14,6 +14,7 @@
 #define BOARD_SIZE 10
 #define MAX_ATTACKS BOARD_SIZE*BOARD_SIZE
 #define NUM_SHIP_TYPES 5
+#define MAX_NAME_SIZE 100
 
 typedef enum {
 
@@ -62,7 +63,7 @@ typedef struct {
 
 typedef struct {
 
-  char name[30];
+  char name[MAX_NAME_SIZE];
   Board * board;
   Attack * attacks[MAX_ATTACKS];
 
@@ -79,7 +80,7 @@ typedef struct {
 Game * game_init(Player *);
 
 // Creation utilities
-Player * player_create(char[20]);
+Player * player_create(char[MAX_NAME_SIZE]);
 Board  * board_create();
 Ship   * ship_create(Point *, Point *, int);
 Attack * attack_create(Point *, attack_result);
@@ -94,6 +95,7 @@ Ship * board_getShipAt(Board *, Point *);
 
 void displayBoard();
 
+char * utils_randomPunnyName();
 int utils_lineIntersectsLine(Point *, Point *, Point *, Point *);
 int utils_pointIntersectsLine(Point *, Point *, Point *);
 int utils_isWithin(int, int, int);
@@ -123,12 +125,12 @@ Game * game_init(Player * real) {
   Game * game = malloc(sizeof(Game));
 
   game->real = real;
-  game->comp = player_create("Sinkin' About You");
+  game->comp = player_create(utils_randomPunnyName());
 
   return game;
 }
 
-Player * player_create(char name[20]) {
+Player * player_create(char name[MAX_NAME_SIZE]) {
   Player * player = malloc(sizeof(Player));
 
   strcpy(player->name, name);
@@ -269,6 +271,22 @@ Ship * board_getShipAt(Board * board, Point * point) {
   }
 
   return NULL;
+}
+
+char * utils_randomPunnyName() {
+  char punnyNames[][MAX_NAME_SIZE] = {
+    "Sinkin' About You",
+    "The Iceburg",
+    "Under the C",
+    "Aboat Time",
+    "Pier Pressure",
+    "Moor Often than Knot",
+    "Miley's ShipWrecking Ball",
+    "Aqua-Holic" };
+
+  char * randomName = malloc(sizeof(char) * MAX_NAME_SIZE);
+  strcpy(randomName, punnyNames[rand() % 8]);
+  return randomName;
 }
 
 int utils_lineIntersectsLine(Point * s1, Point * e1, Point * s2, Point * e2) {
