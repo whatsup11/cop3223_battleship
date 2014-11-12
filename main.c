@@ -146,13 +146,39 @@ int isWithin(int, int, int);
 //============================================================================*/
 
 int main() {
-  srand((int)time(NULL));
+  int seed = (int)time(NULL);
+  srand(seed);
+  printf("Randomized with seed %d\n\n", seed);
 
-  Game * game = game_init(player_create("Steven"));
-  board_placeShips(game->real->board);
-  board_placeShips(game->comp->board);
+  int numTrials = 1000;
 
-  while(ai_attack(game));
+  double sum = 0;
+  double count = 0;
+
+  while(numTrials-- > 0) {
+    Game * game = game_init(player_create("Steven"));
+    board_placeShips(game->real->board);
+    board_placeShips(game->comp->board);
+
+    int numHits = 0;
+    int counter = 0;
+
+    while(ai_attack(game)) {
+      
+      if(game->comp->attacks[counter-1]->result == HIT) {
+        numHits++;
+      }
+
+      if(numHits < 20) {
+        counter++;
+      }
+    }
+
+    sum += counter;
+    count++;
+  }
+
+  printf("%.2lf moves on average\n", sum/count);
 
   return 0;
 }
@@ -252,7 +278,7 @@ attack_result player_attackPlayer(Player * offense, Player * defense, Point * po
   Attack * attack;
 
   // First, ensure an attack here hasn't already been attempted
-  if((attack = player_getAttackAt(offense, point))) {
+  if((attack = player_getAttackAt(offense, point)) != NULL) {
     return attack->result;
   }
 
@@ -262,16 +288,11 @@ attack_result player_attackPlayer(Player * offense, Player * defense, Point * po
   attack_result result = ship != NULL ? HIT : MISS;
 
   attack = attack_create(point, result);
+
   offense->numAttacks++;
 
   // Add the attack to the array of attacks
-  int i;
-  for(i = 0; i < MAX_ATTACKS; i++) {
-    if(offense->attacks[i] == NULL) {
-      offense->attacks[i] = attack;
-      break;
-    }
-  }
+  offense->attacks[offense->numAttacks-1] = attack;
 
   // If we had a hit, make the ship closer to sinking
   if(result == HIT) {
@@ -366,13 +387,13 @@ Ship * board_getShipAt(Board * board, Point * point) {
 
 int ai_attack(Game * game) {
   // Can't make any more moves
-  if(game->comp->numAttacks == 100) return 0;
+  if(game->comp->numAttacks > 99) return 0;
 
-  if(game->aiState->approach == HUNT)
+  if(game->aiState->approach == HUNT) {
     ai_attackHunt(game);
+  }
   else {
-//    ai_attackTarget(game);
-    return 0;
+    ai_attackHunt(game); //ai_attackTarget(game);
   }
 
   return 1;
@@ -388,7 +409,6 @@ void ai_attackHunt(Game * game) {
     if(player_getAttackAt(game->comp, point) == NULL) break;
     else free(point);
   }
-
   // If we have a hit, switch to target mode
   attack_result result = player_attackPlayer(game->comp, game->real, point);
   if(result == HIT) {
@@ -435,24 +455,27 @@ void ai_attackTarget(Game * game) {
   }
 
   // If none of that works, go back to hunting.
-  if(point == NULL) {
+  if(point == NULL || player_getAttackAt(comp, point) != NULL) {
     game->aiState->approach = HUNT;
     ai_attackHunt(game);
-    return;
   }
-
-  player_attackPlayer(comp, game->real, point);
+  else {
+    player_attackPlayer(game->comp, game->real, point);
+  }
 }
 
 Attack * ai_firstHitInStreak(Player * player) {
   int i;
   Attack ** attacks = player->attacks;
 
-  for(i = player->numAttacks-1; i > 0; i--) {
-    if(attacks[i]->result == HIT &&
-      (attacks[i-1]->result == MISS || i == player->numAttacks-1))
+  // Loop from last attack to first attack
+  for(i = player->numAttacks-1; i >= 0; i--) {
+    if( (attacks[i]->result == HIT && i == 0) ||
+        (attacks[i]->result == HIT && attacks[i-1]->result == MISS) ) {
       return attacks[i];
+    }
   }
+
   return NULL; // didn't find anything
 }
 
